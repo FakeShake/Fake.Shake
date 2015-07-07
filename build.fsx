@@ -82,4 +82,6 @@ let main =
 
 let rules : IRule list = [main;outputDir;compileLib;runTests]
 
+#time "on"
 do build (rules @ DefaultRules.allDefaults) (Key "main")
+#time "off"

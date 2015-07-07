@@ -11,7 +11,7 @@ let binary = FsPickler.CreateBinary()
 type Key = | Key of string
 type IRule =
     abstract member Provides : Key -> bool
-type [<NoComparison>] Rule<'a> =
+type [<NoEquality>][<NoComparison>] Rule<'a> =
     {
         Action : Key -> Action<'a>
         Provides : Key -> bool
@@ -40,10 +40,9 @@ and [<NoComparison>] State =
                     failwithf "Unable to find rule matching key %A and returning type %A" key typeof<'a>
             let (state', result) = rule.Action key state
             let pickled =
-                fun () ->
+                lazy
                     result.Force()
                     |> binary.Pickle
-                |> Lazy.Create
             { state' with Results = Map.add key pickled state'.Results }, result
 
 let bind (continuation : 'a -> Action<'b>) (expr : Action<'a>) : Action<'b> =
@@ -83,7 +82,10 @@ let requires<'a> keys : Action<'a list> =
         match keys with
         | key::t ->
             values
-            >>= (fun values' -> require<'a> key >>= fun (value' : 'a) -> return' <| value'::values')
+            >>= (fun values' ->
+                    require<'a> key
+                    >>= fun (value' : 'a) ->
+                            return' <| value'::values')
             |> inner t
         | [] -> values |> map (List.rev)
     inner keys (return' List.empty<'a>)
@@ -130,8 +132,19 @@ type ActionBuilder () =
 let action = ActionBuilder()
 
 let build rules key =
-    let state = { Rules = rules; Results = Map.empty }
-    (State.find state key |> snd).Force()
+    let old =
+        try
+            System.IO.File.ReadAllBytes ".fake.shake.cache"
+            |> binary.UnPickle
+            |> Some
+        with
+        | _ -> None
+    let state = { Rules = rules; Results = match old with Some r -> r | None -> Map.empty }
+    let finalState, buildComputation = (State.find state key)
+    let result = buildComputation.Force()
+    System.IO.File.WriteAllBytes(".fake.shake.cache", binary.Pickle finalState.Results)
+    result
+
 
 let readLines fileName =
   action {
