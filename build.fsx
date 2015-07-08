@@ -5,6 +5,9 @@ open System.Text.RegularExpressions
 open Fake
 open Fake.FscHelper
 open Fake.Shake
+open Fake.Shake.Core
+open Fake.Shake.Control
+open Fake.Shake.DefaultRules
 
 let refReg = Regex("""^#r "(?<ref>.*)"$""", RegexOptions.Compiled)
 let sourceReg = Regex("""^#load "(?<src>.*)"$""", RegexOptions.Compiled)
@@ -15,7 +18,7 @@ let outputDir =
     {
         Action = fun (Key k) -> action { return ensureDirectory k }
         Provides = fun (Key k) -> k = "output"
-        ValidStored = fun k _ -> true
+        ValidStored = defaultDir.ValidStored
     }
 
 let compileLib =
@@ -34,7 +37,7 @@ let compileLib =
                 let copyLocalRefs =
                     refs
                     |> List.filter (fun ref -> filename ref <> ref)
-                do! need (Key "output")
+                do! require (Key "output")
                 let copyLocal localRef =
                     let target = "output" @@ (filename localRef)
                     if not <| File.Exists target then
@@ -54,34 +57,36 @@ let compileLib =
                         Platform = AnyCpu
                         Output = k
                         References = refs }
-                return Fsc setParams (otherSourceFiles @ [sourceFile])
+                do Fsc setParams (otherSourceFiles @ [sourceFile])
+                return! defaultFile.Action (Key k)
             }
         Provides = fun (Key k) -> dllReg.IsMatch k && File.Exists (k |> filename |> changeExt "fsx")
-        ValidStored = fun k _ -> true
+        ValidStored = defaultFile.ValidStored
     }
 
 let runTests =
     {
-        Provides = fun (Key k) -> k = "test"
+        Provides = fun (Key k) -> k = "TestResult.xml"
         Action =
             fun (Key k) ->
                 action {
                     do! need (Key "output/Fake.Shake.Tests.dll")
-                    return NUnit id ["output/Fake.Shake.Tests.dll"]
+                    NUnit id ["output/Fake.Shake.Tests.dll"]
+                    return! defaultFile.Action (Key "TestResult.xml")
                 }
-        ValidStored = fun (Key k) _ -> true
+        ValidStored = defaultFile.ValidStored
     }
 
 let main =
     {
         Provides = fun (Key k) -> k = "main"
         Action =
-            fun (Key k) -> action { do! need (Key "test") }
+            fun (Key k) -> action { do! need (Key "TestResult.xml") }
         ValidStored = fun (Key k) _ -> true
     }
 
 let rules : IRule list = [main;outputDir;compileLib;runTests]
 
 #time "on"
-do build (rules @ DefaultRules.allDefaults) (Key "main")
+do build (rules @ allDefaults) (Key "main")
 #time "off"

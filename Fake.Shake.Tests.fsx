@@ -10,9 +10,9 @@ open NUnit.Framework
 type ActionMonadProps () =
     static member IsTrue () =
         true
-
+    static member IsFalse () =
+        not false
 
 [<Test>]
 let ``Action is a Monad`` () =
     Check.QuickThrowOnFailureAll<ActionMonadProps>()
-    
