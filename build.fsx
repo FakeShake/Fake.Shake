@@ -11,14 +11,36 @@ open Fake.Shake.DefaultRules
 
 let refReg = Regex("""^#r "(?<ref>.*)"$""", RegexOptions.Compiled)
 let sourceReg = Regex("""^#load "(?<src>.*)"$""", RegexOptions.Compiled)
-let dllReg = Regex("""output/.*.dll""", RegexOptions.Compiled)
+let dllReg = Regex("""^bin/.*.dll""", RegexOptions.Compiled)
+let outputReg = Regex("""^output(/.*.nupkg)?$""", RegexOptions.Compiled)
 let packageReg = Regex("""packages/.*.[dll|exe]""", RegexOptions.Compiled)
 
 let outputDir =
     {
-        Action = fun (Key k) -> action { return ensureDirectory k }
-        Provides = fun (Key k) -> k = "output"
+        Action = fun (Key k) -> action {
+                CleanDir k
+                do! need (Key "paket.lock")
+                let! templateLines = readLines "paket.template"
+                do!
+                    templateLines
+                    |> List.map (fun s -> s.Trim())
+                    |> List.filter dllReg.IsMatch
+                    |> List.map Key
+                    |> needs
+                let setParams (p : Paket.PaketPackParams) =
+                    { p with OutputPath = "output" }
+                Paket.Pack setParams
+                return! defaultDir.Action (Key k)
+            }
+        Provides = fun (Key k) -> outputReg.IsMatch k
         ValidStored = defaultDir.ValidStored
+    }
+
+let binDir =
+    {
+        Action = fun (Key k) -> action { return ensureDirectory k }
+        Provides = fun (Key k) -> k = "bin"
+        ValidStored = fun (Key k) _ -> Directory.Exists k
     }
 
 let compileLib =
@@ -37,9 +59,9 @@ let compileLib =
                 let copyLocalRefs =
                     refs
                     |> List.filter (fun ref -> filename ref <> ref)
-                do! require (Key "output")
+                do! require (Key "bin")
                 let copyLocal localRef =
-                    let target = "output" @@ (filename localRef)
+                    let target = "bin" @@ (filename localRef)
                     if not <| File.Exists target then
                         CopyFile target localRef
                     Key target
@@ -70,8 +92,8 @@ let runTests =
         Action =
             fun (Key k) ->
                 action {
-                    do! need (Key "output/Fake.Shake.Tests.dll")
-                    NUnit id ["output/Fake.Shake.Tests.dll"]
+                    do! need (Key "bin/Fake.Shake.Tests.dll")
+                    NUnit id ["bin/Fake.Shake.Tests.dll"]
                     return! defaultFile.Action (Key "TestResult.xml")
                 }
         ValidStored = defaultFile.ValidStored
@@ -81,11 +103,14 @@ let main =
     {
         Provides = fun (Key k) -> k = "main"
         Action =
-            fun (Key k) -> action { do! need (Key "TestResult.xml") }
+            fun (Key k) -> action {
+                do! need (Key "TestResult.xml")
+                do! require (Key "output")
+            }
         ValidStored = fun (Key k) _ -> true
     }
 
-let rules : IRule list = [main;outputDir;compileLib;runTests]
+let rules : IRule list = [main;binDir;outputDir;compileLib;runTests]
 
 #time "on"
 do build (rules @ allDefaults) (Key "main")

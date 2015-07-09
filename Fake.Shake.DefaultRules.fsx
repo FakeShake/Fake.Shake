@@ -32,7 +32,12 @@ let defaultFile =
 
 let defaultDir =
     {
-        Action = fun (Key k) -> action { tracefn "Found directory %s" k; return () }
+        Action = fun (Key k) -> action {
+                tracefn "Found directory %s, requiring contents" k
+                do! Directory.GetFiles k |> Seq.map Key |> List.ofSeq |> needs
+                let! _ = Directory.GetDirectories k |> Seq.map Key |> List.ofSeq |> requires
+                return ()
+            }
         Provides = fun (Key k) -> Directory.Exists k
         ValidStored = fun (Key k) _ -> Directory.Exists k
     }
