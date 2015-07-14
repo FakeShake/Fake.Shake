@@ -1,7 +1,10 @@
 #if INTERACTIVE
+#r "packages/Hopac/lib/net45/Hopac.Core.dll"
+#r "packages/Hopac/lib/net45/Hopac.dll"
 #else
 module Fake.Shake.Core
 #endif
+open Hopac
 
 type Key =
     | Key of string
@@ -22,11 +25,11 @@ type [<NoEquality>][<NoComparison>] Rule<'a> =
     interface IRule with
         member this.Provides k = this.Provides k
         member this.ValidStored key bytes = this.ValidStored key bytes
-and Action<'a> = State -> State * Lazy<'a>
+and Action<'a> = State -> State * Promise<'a>
 and [<NoComparison>] State =
     {
       Rules : seq<IRule>
-      Results : Map<Key, Lazy<byte []>>
+      Results : Map<Key, Promise<byte []>>
       OldResults : Map<Key, byte[]>
       Current : Key option
       Dependencies : Map<Key, Key list>

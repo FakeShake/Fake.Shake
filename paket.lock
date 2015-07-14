@@ -3,5 +3,8 @@ NUGET
   specs:
     FAKE (3.35.5)
     FsCheck (1.0.4)
+    FSharp.Core (3.1.2.1)
     FsPickler (1.2.10)
+    Hopac (0.0.0.47)
+      FSharp.Core (>= 3.1.2.1)
     NUnit.Runners (2.6.4)

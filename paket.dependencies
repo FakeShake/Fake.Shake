@@ -4,3 +4,4 @@ nuget FAKE
 nuget FsCheck
 nuget FsPickler
 nuget NUnit.Runners
+nuget Hopac

@@ -2,15 +2,43 @@
 #r "bin/Fake.Shake.dll"
 #r "packages/NUnit.Runners/tools/nunit.framework.dll"
 #r "packages/FsCheck/lib/net45/FsCheck.dll"
+#r "packages/Hopac/lib/net45/Hopac.Core.dll"
+#r "packages/Hopac/lib/net45/Hopac.dll"
 #endif
 
+open Fake.Shake.Core
+open Fake.Shake.Control
 open FsCheck
+open Hopac
 open NUnit.Framework
 
+let bindable =
+    gen {
+        return (fun i -> action { return 1 + i })
+    }
+
+let state = {
+                Rules = Seq.empty
+                Results = Map.empty
+                OldResults = Map.empty
+                Current = None
+                Dependencies = Map.empty
+                Stack = []
+            }
+
+type ActionGenerators =
+    static member Bindable() =
+        { new Arbitrary<int -> Action<int>>() with
+              override x.Generator = bindable
+        }
+
 type ActionMonadProps () =
-    static member IsTrue () =
-        true
+    static member ``First law`` (f : int -> Action<int>) x =
+        let r = ((return' x) >>= f) state
+        let r' = (f x state)
+        (fst r = fst r') |@ "States equal" .&.
+        (((snd r) |> Job.Global.run) = ((snd r') |> Job.Global.run) |@ "Results equal")
 
 [<Test>]
 let ``Action is a Monad`` () =
-    Check.QuickThrowOnFailureAll<ActionMonadProps>()
+    Check.All<ActionMonadProps> { Config.QuickThrowOnFailure with Arbitrary = [typeof<ActionGenerators>] }

@@ -8,6 +8,7 @@ module Fake.Shake.Control
 #endif
 open Fake
 open Fake.Shake.Core
+open Hopac
 open Nessos.FsPickler
 
 let binary = FsPickler.CreateBinary()
@@ -15,14 +16,14 @@ let binary = FsPickler.CreateBinary()
 let bind (continuation : 'a -> Action<'b>) (expr : Action<'a>) : Action<'b> =
     fun state ->
         let state', result = (expr state)
-        continuation (result.Force()) state'
+        continuation (result |> Job.Global.run) state'
 
 let (>>=) expr continuation =
     bind continuation expr
 
 let return' x =
     fun state ->
-        state, lazy x
+        state, Promise.Now.withValue x
 
 let map f act =
     bind (f >> return') act
@@ -55,16 +56,16 @@ let rec skip key state =
 let run<'a> key state =
     if skip key state then
         tracefn "Skipped %A, valid stored result" key
-        let pickle = lazy state.OldResults.[key]
-        let (lazyResult : Lazy<'a>) = lazy (state.OldResults.[key] |> (binary.UnPickle))
+        let pickle = state.OldResults.[key] |> Promise.Now.withValue
+        let lazyResult : Promise<'a> =
+            Promise.Now.withValue (state.OldResults.[key] |> (binary.UnPickle))
         { state with Results = state.Results |> Map.add key pickle }, lazyResult
     else
         let rule = State.find state key
         let (state', result) = rule.Action key (state |> State.clearDeps key)
         let pickled =
-            lazy
-                result.Force()
-                |> binary.Pickle
+            Job.map (binary.Pickle) result
+            |> Promise.Now.delay
         { state' with Results = state'.Results |> Map.add key pickled }, result
 
 let require<'a> key : Action<'a> =
@@ -75,7 +76,7 @@ let require<'a> key : Action<'a> =
             |> State.push key
         let state, result =
             match state.Results |> Map.tryFind key with
-            | Some r -> state, lazy (r.Force() |> binary.UnPickle)
+            | Some r -> state, Job.map (binary.UnPickle) r |> Promise.Now.delay
             | None -> run key state
         State.pop state, result
 
