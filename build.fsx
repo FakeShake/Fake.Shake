@@ -12,7 +12,6 @@ open Fake.Shake.DefaultRules
 let refReg = Regex("""^#r "(?<ref>.*)"$""", RegexOptions.Compiled)
 let sourceReg = Regex("""^#load "(?<src>.*)"$""", RegexOptions.Compiled)
 let dllReg = Regex("""^bin/.*.dll""", RegexOptions.Compiled)
-let outputReg = Regex("""^output(/.*.nupkg)?$""", RegexOptions.Compiled)
 let packageReg = Regex("""packages/.*.[dll|exe]""", RegexOptions.Compiled)
 
 let outputDir =
@@ -32,7 +31,7 @@ let outputDir =
                 Paket.Pack setParams
                 return! defaultDir.Action (Key k)
             }
-        Provides = fun (Key k) -> outputReg.IsMatch k
+        Provides = fun (Key k) -> "output" = k
         ValidStored = defaultDir.ValidStored
     }
 

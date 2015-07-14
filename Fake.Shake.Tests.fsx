@@ -34,10 +34,9 @@ type ActionGenerators =
 
 type ActionMonadProps () =
     static member ``First law`` (f : int -> Action<int>) x =
-        let r = ((return' x) >>= f) state
-        let r' = (f x state)
-        (fst r = fst r') |@ "States equal" .&.
-        (((snd r) |> Job.Global.run) = ((snd r') |> Job.Global.run) |@ "Results equal")
+        let r = ((return' x) >>= f) state |> Job.Global.run |> snd
+        let r' = (f x state) |> Job.Global.run |> snd
+        r = r'
 
 [<Test>]
 let ``Action is a Monad`` () =

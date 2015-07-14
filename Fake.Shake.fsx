@@ -41,8 +41,7 @@ let build rules key =
             Dependencies = old.Dependencies
             Stack = []
         }
-    let finalState, buildComputation = require key state
-    let result = buildComputation |> Job.Global.run
+    let finalState, result = require key state |> Job.Global.run
     let mergedResults =
         finalState.Results
         |> Map.map (fun _ lazy' -> Job.Global.run lazy')

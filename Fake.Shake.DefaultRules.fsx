@@ -13,7 +13,9 @@ open Fake.Shake.Control
 
 let private hashFile path =
     let sha = SHA1.Create()
-    sha.ComputeHash(File.OpenRead path) |> ContentHash
+    using (File.OpenRead path)
+        (fun stream ->
+            sha.ComputeHash(stream) |> ContentHash)
 
 let defaultFile =
     {

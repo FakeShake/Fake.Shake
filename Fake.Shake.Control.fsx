@@ -15,15 +15,18 @@ let binary = FsPickler.CreateBinary()
 
 let bind (continuation : 'a -> Action<'b>) (expr : Action<'a>) : Action<'b> =
     fun state ->
-        let state', result = (expr state)
-        continuation (result |> Job.Global.run) state'
+        job {
+            let! results = expr state
+            let state', result = results
+            return! continuation result state'
+        } |> Promise.Now.delay
 
 let (>>=) expr continuation =
     bind continuation expr
 
 let return' x =
     fun state ->
-        state, Promise.Now.withValue x
+        Promise.Now.withValue (state, x)
 
 let map f act =
     bind (f >> return') act
@@ -54,31 +57,36 @@ let rec skip key state =
         | None -> false
 
 let run<'a> key state =
-    if skip key state then
+    match skip key state with
+    | true ->
         tracefn "Skipped %A, valid stored result" key
         let pickle = state.OldResults.[key] |> Promise.Now.withValue
-        let lazyResult : Promise<'a> =
-            Promise.Now.withValue (state.OldResults.[key] |> (binary.UnPickle))
-        { state with Results = state.Results |> Map.add key pickle }, lazyResult
-    else
-        let rule = State.find state key
-        let (state', result) = rule.Action key (state |> State.clearDeps key)
-        let pickled =
-            Job.map (binary.Pickle) result
-            |> Promise.Now.delay
-        { state' with Results = state'.Results |> Map.add key pickled }, result
+        let result : 'a =
+            state.OldResults.[key] |> (binary.UnPickle)
+        Promise.Now.withValue ({ state with Results = state.Results |> Map.add key pickle }, result)
+    | false ->
+        job {
+            let rule = State.find state key
+            let! (state', result : 'a) = rule.Action key (state |> State.clearDeps key)
+            let pickled =
+                binary.Pickle result
+                |> Promise.Now.withValue
+            return ({ state' with Results = state'.Results |> Map.add key pickled }, result)
+        } |> Promise.Now.delay
 
 let require<'a> key : Action<'a> =
     fun state ->
-        tracefn "%A required via stack %A" key state.Stack
-        let state =
-            state
-            |> State.push key
-        let state, result =
-            match state.Results |> Map.tryFind key with
-            | Some r -> state, Job.map (binary.UnPickle) r |> Promise.Now.delay
-            | None -> run key state
-        State.pop state, result
+        job {
+            tracefn "%A required via stack %A" key state.Stack
+            let state =
+                state
+                |> State.push key
+            let! state, result =
+                match state.Results |> Map.tryFind key with
+                | Some r -> Job.bind (fun bytes -> Promise.Now.withValue (state, binary.UnPickle bytes)) r
+                | None -> run key state :> Job<State * 'a>
+            return (State.pop state, result)
+        } |> Promise.Now.delay
 
 let requires<'a> keys : Action<'a list> =
     let rec inner keys (values : Action<'a list>) =

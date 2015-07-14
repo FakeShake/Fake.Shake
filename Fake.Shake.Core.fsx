@@ -25,7 +25,7 @@ type [<NoEquality>][<NoComparison>] Rule<'a> =
     interface IRule with
         member this.Provides k = this.Provides k
         member this.ValidStored key bytes = this.ValidStored key bytes
-and Action<'a> = State -> State * Promise<'a>
+and Action<'a> = State -> Promise<State * 'a>
 and [<NoComparison>] State =
     {
       Rules : seq<IRule>
