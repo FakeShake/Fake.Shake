@@ -7,7 +7,6 @@ Based on the [Shake paper](http://community.haskell.org/~ndm/downloads/paper-sha
 Differences from the paper/Haskell Shake, or implementation details:
 
 * Assumes you'll be using Fake helpers, will integrate with them as we go along
-* No concurrency (yet); the State type will need some amendments to allow for it
 * Rules are defined a little differently, see [Fake.Shake.DefaultRules.fsx](Fake.Shake.DefaultRules.fsx)
 * Currently using SHA1 of content of files rather than last modified time - will revisit if it causes performance issues
 * Using FsPickler to store cache results
