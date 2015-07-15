@@ -6,6 +6,7 @@
 [<AutoOpen>]
 module Fake.Shake.Control
 #endif
+open System.Threading.Tasks
 open Fake
 open Fake.Shake.Core
 open Hopac
@@ -44,6 +45,34 @@ let tryFinally expr comp =
         try expr state
         finally comp()
 
+let liftAsync (expr : Async<'a>) : Action<'a> =
+    fun state ->
+        job {
+            let! a = expr
+            return state, a
+        } |> Promise.Now.delay
+
+let liftTask (expr : Task<'a>) : Action<'a> =
+    fun state ->
+        job {
+            let! a = expr
+            return state, a
+        } |> Promise.Now.delay
+
+let liftTask' (expr : Task) : Action<unit> =
+    fun state ->
+        job {
+            do! expr
+            return state, ()
+        } |> Promise.Now.delay
+
+let liftJob (expr : Job<'a>) : Action<'a> =
+    fun state ->
+        job {
+            let! a = expr
+            return state, a
+        } |> Promise.Now.delay
+
 let rec skip key state =
     let maybeRule = State.rawFind state key
     match maybeRule with
@@ -55,7 +84,6 @@ let rec skip key state =
             rule.ValidStored key old
             && deps |> List.forall (fun dep -> skip dep state)
         | None -> false
-
 
 let private run<'a> key state =
     match skip key state with
@@ -137,36 +165,28 @@ let needs keys : Action<unit> =
 type ActionBuilder () =
     member __.Bind(expr, cont) =
         bind cont expr
-    member __.Bind(expr : Async<'a>, cont : 'a -> Action<'b>) : Action<'b> =
-        fun state ->
-            job {
-                let! a = expr
-                return! cont a state
-            } |> Promise.Now.delay
-    member __.Bind(expr : System.Threading.Tasks.Task<'a>, cont : 'a -> Action<'b>) : Action<'b> =
-        fun state ->
-            job {
-                let! a = expr
-                return! cont a state
-            } |> Promise.Now.delay
-    member __.Bind(expr : System.Threading.Tasks.Task, cont : unit -> Action<'b>) : Action<'b> =
-        fun state ->
-            job {
-                do! expr
-                return! cont () state
-            } |> Promise.Now.delay
-    member __.Bind(expr : Job<'a>, cont : 'a -> Action<'b>) : Action<'b> =
-        fun state ->
-            job {
-                let! a = expr
-                return! cont a state
-            } |> Promise.Now.delay
+    member __.Bind(expr, cont) =
+        bind cont (liftAsync expr)
+    member __.Bind(expr, cont) =
+        bind cont (liftTask expr)
+    member __.Bind(expr, cont) =
+        bind cont (liftTask' expr)
+    member __.Bind(expr, cont) =
+        bind cont (liftJob expr)
     member __.Return x =
         return' x
     member __.Zero () =
         return' ()
     member __.ReturnFrom x =
         x
+    member __.ReturnFrom x =
+        liftAsync x
+    member __.ReturnFrom x =
+        liftTask x
+    member __.ReturnFrom x =
+        liftTask' x
+    member __.ReturnFrom x =
+        liftJob x
     member this.Delay (cont) =
         this.Bind (this.Return (), cont)
     member __.Combine (expr1, expr2) =

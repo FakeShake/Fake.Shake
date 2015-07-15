@@ -13,6 +13,7 @@ let refReg = Regex("""^#r "(?<ref>.*)"$""", RegexOptions.Compiled)
 let sourceReg = Regex("""^#load "(?<src>.*)"$""", RegexOptions.Compiled)
 let packageReg = Regex("""packages/.*.[dll|exe]""", RegexOptions.Compiled)
 let binGlob = Globbing.isMatch "bin/*"
+let compileReg = Regex("""^compile::(?<fullpath>.*)""", RegexOptions.Compiled)
 
 let outputDir =
     {
@@ -42,13 +43,14 @@ let binDir =
         ValidStored = fun (Key k) _ -> Directory.Exists k
     }
 
-let compileLib =
+let compile =
     {
         Action =
             fun (Key k) -> action {
-                tracefn "Building %s" k
+                let path = compileReg.Match(k).Groups.["fullpath"].Value
+                tracefn "Building %s" path
                 let sourceFile =
-                    k |> filename |> changeExt "fsx"
+                    path |> filename |> changeExt "fsx" |> System.IO.Path.GetFullPath
                 let! lines =
                     readLines sourceFile
                 let refs =
@@ -77,11 +79,21 @@ let compileLib =
                         Debug = false
                         FscTarget = Library
                         Platform = AnyCpu
-                        Output = k
+                        Output = path
                         References = refs }
                 do Fsc setParams (otherSourceFiles @ [sourceFile])
-                do! Async.Sleep 1000
-                return! defaultFile.Action (Key k)
+                return! require<ContentHash> (Key path)
+            }
+        Provides = fun (Key k) -> compileReg.IsMatch k
+        ValidStored = fun (Key k) -> defaultFile.ValidStored (compileReg.Match(k).Groups.["fullpath"].Value |> Key)
+    }
+
+let isCompileLib =
+    {
+        Action =
+            fun (Key k) -> action {
+                let fullpath = System.IO.Path.GetFullPath k
+                return! require<ContentHash> (Key ("compile::" + fullpath))
             }
         Provides = fun (Key k) -> binGlob k && File.Exists (k |> filename |> changeExt "fsx")
         ValidStored = defaultFile.ValidStored
@@ -121,12 +133,8 @@ let main =
         ValidStored = fun _ _ -> true
     }
 
-let rules : IRule list = [main;binDir;outputDir;compileLib;runTests;nunit]
+let rules : IRule list = [main;binDir;outputDir;isCompileLib;compile;runTests;nunit]
 
 #time "on"
 do build (rules @ allDefaults) (Key "main")
 #time "off"
-
-open Fake
-
-!! "bin/*" |> Seq.map (sprintf "%s")
