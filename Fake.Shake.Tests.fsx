@@ -19,10 +19,10 @@ let bindable =
 
 let state = {
                 Rules = Seq.empty
-                Results = Map.empty
+                Results = System.Collections.Concurrent.ConcurrentDictionary()
                 OldResults = Map.empty
                 Current = None
-                Dependencies = Map.empty
+                Dependencies = System.Collections.Concurrent.ConcurrentDictionary()
                 Stack = []
             }
 
@@ -32,6 +32,7 @@ type ActionGenerators =
               override x.Generator = bindable
         }
 
+// random comment
 type ActionMonadProps () =
     static member ``First law`` (f : int -> Action<int>) x =
         let r = ((return' x) >>= f) state |> Job.Global.run |> snd

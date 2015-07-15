@@ -5,6 +5,7 @@
 module Fake.Shake.Core
 #endif
 open Hopac
+open System.Collections.Concurrent
 
 type Key =
     | Key of string
@@ -29,10 +30,10 @@ and Action<'a> = State -> Promise<State * 'a>
 and [<NoComparison>] State =
     {
       Rules : seq<IRule>
-      Results : Map<Key, Promise<byte []>>
+      Results : ConcurrentDictionary<Key, Promise<byte []>>
       OldResults : Map<Key, byte[]>
       Current : Key option
-      Dependencies : Map<Key, Key list>
+      Dependencies : ConcurrentDictionary<Key, Key list>
       Stack : Key list
     }
     static member rawFind state key =
@@ -53,20 +54,17 @@ and [<NoComparison>] State =
         | None ->
             failwithf "Unable to find rule matching %A" key
     static member addDep key dep state =
-        let currentDeps =
-            match Map.tryFind key state.Dependencies with
-            | Some deps -> deps
-            | None -> []
-        { state with Dependencies = Map.add key (dep::currentDeps |> Seq.distinct |> Seq.toList) state.Dependencies }
+        state.Dependencies.AddOrUpdate(key, [dep], fun _ ks -> dep::ks |> Seq.distinct |> Seq.toList)
+        |> ignore
     static member clearDeps key state =
-        { state with Dependencies = Map.add key [] state.Dependencies }
+        state.Dependencies.AddOrUpdate(key, [], fun _ _ -> [])
+        |> ignore
     static member push key state =
         match state.Current with
-        | None ->
-            { state with Stack = key::state.Stack; Current = Some key }
+        | None -> ()
         | Some k ->
-            { state with Stack = key::state.Stack; Current = Some key }
-            |> State.addDep k key
+            State.addDep k key state
+        { state with Stack = key::state.Stack; Current = Some key }
     static member pop state =
         match state.Stack with
         | _::previous::rest ->

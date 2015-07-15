@@ -58,19 +58,20 @@ let compileLib =
                 let copyLocalRefs =
                     refs
                     |> List.filter (fun ref -> filename ref <> ref)
+                    |> List.map Key
                 do! require (Key "bin")
-                let copyLocal localRef =
+                let copyLocal (Key localRef) =
                     let target = "bin" @@ (filename localRef)
                     if not <| File.Exists target then
                         CopyFile target localRef
                     Key target
-                do! needs (copyLocalRefs |> List.map Key)
-                do! needs (copyLocalRefs |> List.map copyLocal)
                 let otherSourceFiles =
                     lines
                     |> List.filter (fun l -> sourceReg.IsMatch l)
                     |> List.map (fun l -> sourceReg.Match(l).Groups.["src"].Value)
-                do! needs (otherSourceFiles |> List.map Key)
+                do! needs <| List.concat [copyLocalRefs
+                                          (copyLocalRefs |> List.map copyLocal)
+                                          otherSourceFiles |> List.map Key]
                 let setParams (p : FscParams) =
                     { p with
                         Debug = false
@@ -85,7 +86,7 @@ let compileLib =
         ValidStored = defaultFile.ValidStored
     }
 
-let runTests =
+let nunit =
     {
         Provides = fun (Key k) -> k = "TestResult.xml"
         Action =
@@ -98,18 +99,28 @@ let runTests =
         ValidStored = defaultFile.ValidStored
     }
 
+let runTests =
+    {
+        Provides = fun (Key k) -> k = "test"
+        Action =
+            fun (Key k) ->
+                action {
+                    do! need (Key "TestResult.xml")
+                }
+        ValidStored = fun _ _ -> true
+    }
+
 let main =
     {
         Provides = fun (Key k) -> k = "main"
         Action =
             fun (Key k) -> action {
-                do! need (Key "TestResult.xml")
-                do! require (Key "output")
+                do! doAll [Key "test"; Key "output"]
             }
-        ValidStored = fun (Key k) _ -> true
+        ValidStored = fun _ _ -> true
     }
 
-let rules : IRule list = [main;binDir;outputDir;compileLib;runTests]
+let rules : IRule list = [main;binDir;outputDir;compileLib;runTests;nunit]
 
 #time "on"
 do build (rules @ allDefaults) (Key "main")

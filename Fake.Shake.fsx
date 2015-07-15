@@ -11,6 +11,7 @@
 [<AutoOpen>]
 module Fake.Shake.Build
 #endif
+open System.Collections.Concurrent
 open Fake
 open Fake.Shake.Core
 open Fake.Shake.Control
@@ -20,7 +21,7 @@ let [<Literal>] cacheFile = ".fake.shake.cache"
 
 type Cache =
     {
-        Dependencies : Map<Key, Key list>
+        Dependencies : ConcurrentDictionary<Key, Key list>
         Results : Map<Key, byte []>
     }
 
@@ -31,11 +32,11 @@ let build rules key =
             |> binary.UnPickle
         with
         | _ ->
-        { Dependencies = Map.empty; Results = Map.empty }
+            { Dependencies = ConcurrentDictionary(); Results = Map.empty }
     let state =
         {
             Rules = rules
-            Results = Map.empty
+            Results = ConcurrentDictionary()
             OldResults = old.Results
             Current = None
             Dependencies = old.Dependencies
@@ -43,8 +44,9 @@ let build rules key =
         }
     let finalState, result = require key state |> Job.Global.run
     let mergedResults =
-        finalState.Results
-        |> Map.map (fun _ lazy' -> Job.Global.run lazy')
+        finalState.Results.ToArray()
+        |> Seq.map (fun kv -> kv.Key, kv.Value |> Job.Global.run)
+        |> Map.ofSeq
         |> Map.fold (fun old k bytes -> Map.add k bytes old) old.Results
     let cache = { Dependencies = finalState.Dependencies; Results = mergedResults }
     System.IO.File.WriteAllBytes(cacheFile, binary.Pickle cache)

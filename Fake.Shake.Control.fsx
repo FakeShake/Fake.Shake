@@ -51,28 +51,52 @@ let rec skip key state =
     | Some rule ->
         match state.OldResults |> Map.tryFind key with
         | Some old ->
-            let deps = match state.Dependencies |> Map.tryFind key with None -> [] | Some ds -> ds
+            let deps = match state.Dependencies.TryGetValue key with false, _ -> [] | true, ds -> ds
             rule.ValidStored key old
             && deps |> List.forall (fun dep -> skip dep state)
         | None -> false
 
-let run<'a> key state =
+
+let private run<'a> key state =
     match skip key state with
     | true ->
-        tracefn "Skipped %A, valid stored result" key
-        let pickle = state.OldResults.[key] |> Promise.Now.withValue
-        let result : 'a =
-            state.OldResults.[key] |> (binary.UnPickle)
-        Promise.Now.withValue ({ state with Results = state.Results |> Map.add key pickle }, result)
+        job {
+            tracefn "Skipped %A, valid stored result" key
+            let pickle = state.OldResults.[key] |> Promise.Now.withValue
+            let result : 'a =
+                state.OldResults.[key] |> (binary.UnPickle)
+            state.Results.GetOrAdd(key, pickle) |> ignore
+        }
     | false ->
         job {
+            tracefn "No valid stored value for %A, running" key
             let rule = State.find state key
-            let! (state', result : 'a) = rule.Action key (state |> State.clearDeps key)
+            let (result : Promise<State * 'a>) =
+                State.clearDeps key state
+                rule.Action key state
             let pickled =
-                binary.Pickle result
-                |> Promise.Now.withValue
-            return ({ state' with Results = state'.Results |> Map.add key pickled }, result)
-        } |> Promise.Now.delay
+                result
+                |> Job.map (fun (state, r) -> binary.Pickle r)
+                |> Promise.Now.delay
+            state.Results.GetOrAdd(key, pickled) |> ignore
+        }
+
+let private requireCh : Ch<Key * State * (Key -> State -> Job<unit>) * Ch<unit>> =
+    Ch.create ()
+    |> Hopac.TopLevel.run
+
+let rec private processRequire () =
+    job {
+        let! key, state, run, ack = Ch.take requireCh
+        do!
+            match state.Results.TryGetValue key with
+            | true, r -> Alt.always () :> Job<unit>
+            | false, _ -> run key state
+        do! Ch.send ack ()
+        return! processRequire ()
+    }
+
+do processRequire () |> Hopac.TopLevel.start
 
 let require<'a> key : Action<'a> =
     fun state ->
@@ -81,25 +105,28 @@ let require<'a> key : Action<'a> =
             let state =
                 state
                 |> State.push key
+            let! ackChannel = Ch.create ()
+            do! Ch.send requireCh (key, state, run<'a>, ackChannel)
+            do! Ch.take ackChannel
             let! state, result =
-                match state.Results |> Map.tryFind key with
-                | Some r -> Job.bind (fun bytes -> Promise.Now.withValue (state, binary.UnPickle bytes)) r
-                | None -> run key state :> Job<State * 'a>
+                state.Results.[key]
+                |> Job.bind (fun bytes -> Promise.Now.withValue (state, binary.UnPickle bytes))
             return (State.pop state, result)
         } |> Promise.Now.delay
 
 let requires<'a> keys : Action<'a list> =
-    let rec inner keys (values : Action<'a list>) =
-        match keys with
-        | key::t ->
-            values
-            >>= (fun values' ->
-                    require<'a> key
-                    >>= fun (value' : 'a) ->
-                            return' <| value'::values')
-            |> inner t
-        | [] -> values |> map (List.rev)
-    inner keys (return' List.empty<'a>)
+    fun state ->
+        Extensions.Seq.Con.mapJob (fun k -> require<'a> k state) keys
+        |> Job.map Seq.toList
+        |> Job.map (List.map snd)
+        |> Job.map (fun results -> state, results)
+        |> Promise.Now.delay
+
+let doAll keys : Action<unit> =
+    fun state ->
+        Extensions.Seq.Con.mapJob (fun k -> (require<unit> k) state) keys
+        |> Job.map (fun _ -> state, ())
+        |> Promise.Now.delay
 
 let need key : Action<unit> =
     require<ContentHash> key
