@@ -17,11 +17,15 @@ let private hashFile path =
         (fun stream ->
             sha.ComputeHash(stream) |> ContentHash)
 
-let defaultFile =
+let rec defaultFile =
     {
         Action = fun (Key k) ->
             action {
-                return hashFile k
+                let fullPath = System.IO.Path.GetFullPath k
+                if k <> fullPath then
+                    return! require (Key fullPath)
+                else
+                    return hashFile k
             }
         Provides = fun (Key k) -> File.Exists k
         ValidStored = fun (Key k) bytes ->
@@ -36,7 +40,10 @@ let defaultDir =
     {
         Action = fun (Key k) -> action {
                 tracefn "Found directory %s, requiring contents" k
-                do! Directory.GetFiles k |> Seq.map Key |> List.ofSeq |> needs
+                do!
+                    Directory.GetFiles k
+                    |> Seq.map (System.IO.Path.GetFullPath)
+                    |> Seq.map Key |> List.ofSeq |> needs
                 let! _ = Directory.GetDirectories k |> Seq.map Key |> List.ofSeq |> requires
                 return ()
             }

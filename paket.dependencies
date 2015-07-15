@@ -1,6 +1,6 @@
 source https://nuget.org/api/v2
 
-nuget FAKE
+nuget FAKE prerelease
 nuget FsCheck
 nuget FsPickler
 nuget NUnit.Runners

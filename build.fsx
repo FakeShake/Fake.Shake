@@ -11,8 +11,8 @@ open Fake.Shake.DefaultRules
 
 let refReg = Regex("""^#r "(?<ref>.*)"$""", RegexOptions.Compiled)
 let sourceReg = Regex("""^#load "(?<src>.*)"$""", RegexOptions.Compiled)
-let dllReg = Regex("""^bin/.*.dll""", RegexOptions.Compiled)
 let packageReg = Regex("""packages/.*.[dll|exe]""", RegexOptions.Compiled)
+let binGlob = Globbing.isMatch "bin/*"
 
 let outputDir =
     {
@@ -23,7 +23,7 @@ let outputDir =
                 do!
                     templateLines
                     |> List.map (fun s -> s.Trim())
-                    |> List.filter dllReg.IsMatch
+                    |> List.filter binGlob
                     |> List.map Key
                     |> needs
                 let setParams (p : Paket.PaketPackParams) =
@@ -80,9 +80,10 @@ let compileLib =
                         Output = k
                         References = refs }
                 do Fsc setParams (otherSourceFiles @ [sourceFile])
+                do! Async.Sleep 1000
                 return! defaultFile.Action (Key k)
             }
-        Provides = fun (Key k) -> dllReg.IsMatch k && File.Exists (k |> filename |> changeExt "fsx")
+        Provides = fun (Key k) -> binGlob k && File.Exists (k |> filename |> changeExt "fsx")
         ValidStored = defaultFile.ValidStored
     }
 
@@ -92,8 +93,8 @@ let nunit =
         Action =
             fun (Key k) ->
                 action {
-                    do! need (Key "bin/Fake.Shake.Tests.dll")
-                    NUnit id ["bin/Fake.Shake.Tests.dll"]
+                    do! need (Key <| "bin" @@ "Fake.Shake.Tests.dll")
+                    NUnit id ["bin" @@ "Fake.Shake.Tests.dll"]
                     return! defaultFile.Action (Key "TestResult.xml")
                 }
         ValidStored = defaultFile.ValidStored
@@ -125,3 +126,7 @@ let rules : IRule list = [main;binDir;outputDir;compileLib;runTests;nunit]
 #time "on"
 do build (rules @ allDefaults) (Key "main")
 #time "off"
+
+open Fake
+
+!! "bin/*" |> Seq.map (sprintf "%s")

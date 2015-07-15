@@ -3,3 +3,4 @@ output
 packages
 test.fsx
 TestResult.xml
+.fake

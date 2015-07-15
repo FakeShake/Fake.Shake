@@ -19,7 +19,7 @@ open Hopac
 
 let [<Literal>] cacheFile = ".fake.shake.cache"
 
-type Cache =
+type [<NoComparison>] Cache =
     {
         Dependencies : ConcurrentDictionary<Key, Key list>
         Results : Map<Key, byte []>
@@ -42,7 +42,10 @@ let build rules key =
             Dependencies = old.Dependencies
             Stack = []
         }
-    let finalState, result = require key state |> Job.Global.run
+    let finalState, result =
+       match require key state |> Job.catch |> Job.Global.run with
+       | Choice1Of2 x -> x
+       | Choice2Of2 ex -> raise ex
     let mergedResults =
         finalState.Results.ToArray()
         |> Seq.map (fun kv -> kv.Key, kv.Value |> Job.Global.run)

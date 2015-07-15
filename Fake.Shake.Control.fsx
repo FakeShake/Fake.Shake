@@ -63,8 +63,6 @@ let private run<'a> key state =
         job {
             tracefn "Skipped %A, valid stored result" key
             let pickle = state.OldResults.[key] |> Promise.Now.withValue
-            let result : 'a =
-                state.OldResults.[key] |> (binary.UnPickle)
             state.Results.GetOrAdd(key, pickle) |> ignore
         }
     | false ->
@@ -76,7 +74,7 @@ let private run<'a> key state =
                 rule.Action key state
             let pickled =
                 result
-                |> Job.map (fun (state, r) -> binary.Pickle r)
+                |> Job.map (fun (_, r) -> binary.Pickle r)
                 |> Promise.Now.delay
             state.Results.GetOrAdd(key, pickled) |> ignore
         }
@@ -90,7 +88,7 @@ let rec private processRequire () =
         let! key, state, run, ack = Ch.take requireCh
         do!
             match state.Results.TryGetValue key with
-            | true, r -> Alt.always () :> Job<unit>
+            | true, _ -> Alt.always () :> Job<unit>
             | false, _ -> run key state
         do! Ch.send ack ()
         return! processRequire ()
@@ -139,6 +137,30 @@ let needs keys : Action<unit> =
 type ActionBuilder () =
     member __.Bind(expr, cont) =
         bind cont expr
+    member __.Bind(expr : Async<'a>, cont : 'a -> Action<'b>) : Action<'b> =
+        fun state ->
+            job {
+                let! a = expr
+                return! cont a state
+            } |> Promise.Now.delay
+    member __.Bind(expr : System.Threading.Tasks.Task<'a>, cont : 'a -> Action<'b>) : Action<'b> =
+        fun state ->
+            job {
+                let! a = expr
+                return! cont a state
+            } |> Promise.Now.delay
+    member __.Bind(expr : System.Threading.Tasks.Task, cont : unit -> Action<'b>) : Action<'b> =
+        fun state ->
+            job {
+                do! expr
+                return! cont () state
+            } |> Promise.Now.delay
+    member __.Bind(expr : Job<'a>, cont : 'a -> Action<'b>) : Action<'b> =
+        fun state ->
+            job {
+                let! a = expr
+                return! cont a state
+            } |> Promise.Now.delay
     member __.Return x =
         return' x
     member __.Zero () =
@@ -160,7 +182,7 @@ type ActionBuilder () =
             match res with
             | null -> ()
             | disp -> disp.Dispose()))
-    member this.While (guard, expr) =
+    member this.While (guard, expr : Action<_>) =
         match guard () with
         | true -> this.Bind(expr, fun () -> this.While (guard, expr))
         | _ -> this.Zero ()
