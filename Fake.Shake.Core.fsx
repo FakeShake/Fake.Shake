@@ -4,8 +4,9 @@
 #else
 module Fake.Shake.Core
 #endif
-open Hopac
+open System
 open System.Collections.Concurrent
+open Hopac
 
 type Key =
     | Key of string

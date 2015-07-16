@@ -43,7 +43,7 @@ let build rules key =
             Stack = []
         }
     let finalState, result =
-       match require key state |> Job.catch |> Job.Global.run with
+       match require key state |> Job.catch |> TopLevel.run with
        | Choice1Of2 x -> x
        | Choice2Of2 ex -> raise ex
     let mergedResults =
