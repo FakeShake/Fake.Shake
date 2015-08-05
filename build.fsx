@@ -1,4 +1,5 @@
 #load "Fake.Shake.fsx"
+#I "packages/FAKE/tools"
 #r "packages/FAKE/tools/FakeLib.dll"
 open System.IO
 open System.Text.RegularExpressions
@@ -128,7 +129,6 @@ let main =
         Provides = fun (Key k) -> k = "main"
         Action =
             fun (Key k) -> action {
-                // Just so we detect changes to the build script...
                 do! need (Key "build.fsx")
                 do! doAll [Key "test"; Key "output"]
             }
