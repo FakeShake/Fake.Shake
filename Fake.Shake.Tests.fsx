@@ -1,9 +1,12 @@
 #if INTERACTIVE
 #r "bin/Fake.Shake.dll"
+#r "packages/FAKE/tools/FakeLib.dll"
 #r "packages/NUnit.Runners/tools/nunit.framework.dll"
 #r "packages/FsCheck/lib/net45/FsCheck.dll"
+#r "packages/FsPickler/lib/net45/FsPickler.dll"
 #r "packages/Hopac/lib/net45/Hopac.Core.dll"
 #r "packages/Hopac/lib/net45/Hopac.dll"
+#r "packages/Hopac/lib/net45/Hopac.Platform.dll"
 #endif
 
 open Fake.Shake.Core

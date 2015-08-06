@@ -2,6 +2,7 @@
 // Manually add dll search paths for mono builds
 #I "packages/FAKE/tools"
 #I "packages/Hopac/lib/net45"
+#I "packages/NUnit.Runners/tools"
 #r "packages/FAKE/tools/FakeLib.dll"
 open System.IO
 open System.Text.RegularExpressions
@@ -109,7 +110,9 @@ let nunit =
             fun (Key k) ->
                 action {
                     do! need (Key <| "bin" @@ "Fake.Shake.Tests.dll")
-                    NUnit id ["bin" @@ "Fake.Shake.Tests.dll"]
+                    let setParams (p : Fake.NUnitCommon.NUnitParams) =
+                        { p with WorkingDir = "bin" }
+                    NUnit setParams ["Fake.Shake.Tests.dll"]
                     return! defaultFile.Action (Key "TestResult.xml")
                 }
         ValidStored = defaultFile.ValidStored
