@@ -1,5 +1,5 @@
 matrix:
   fast_finish: true
 build_script:
-  - cmd: build.cmd Test
+  - cmd: build.bat
 test: off
