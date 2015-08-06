@@ -1,0 +1,5 @@
+matrix:
+  fast_finish: true
+build_script:
+  - cmd: build.cmd Test
+test: off
