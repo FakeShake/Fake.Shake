@@ -1,5 +1,7 @@
 #load "Fake.Shake.fsx"
+// Manually add dll search paths for mono builds
 #I "packages/FAKE/tools"
+#I "packages/Hopac/lib/net45"
 #r "packages/FAKE/tools/FakeLib.dll"
 open System.IO
 open System.Text.RegularExpressions
