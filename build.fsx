@@ -171,9 +171,7 @@ let nunit =
                     do! needs (!! "test/**/*.*proj" |> Seq.map Key)
                     let testDlls = !! (sprintf "test/**/bin/%s/*.Tests.dll" configuration) |> Seq.toList
                     do! needs (testDlls |> Seq.map Key)
-                    let setParams (p : Fake.NUnitCommon.NUnitParams) =
-                        { p with WorkingDir = "bin" }
-                    NUnit setParams testDlls 
+                    NUnit id testDlls 
                     return! defaultFile.Action (Key "TestResult.xml")
                 }
         ValidStored = defaultFile.ValidStored
