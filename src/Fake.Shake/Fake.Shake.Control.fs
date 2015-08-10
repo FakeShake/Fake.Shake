@@ -1,11 +1,6 @@
-#if INTERACTIVE
-#r "packages/FAKE/tools/FakeLib.dll"
-#r "packages/FsPickler/lib/net45/FsPickler.dll"
-#load "Fake.Shake.Core.fsx"
-#else
 [<AutoOpen>]
 module Fake.Shake.Control
-#endif
+
 open System.Threading.Tasks
 open Fake
 open Fake.Shake.Core

@@ -1,16 +1,5 @@
-#if INTERACTIVE
-#r "packages/FAKE/tools/FakeLib.dll"
-#r "packages/FsPickler/lib/net45/FsPickler.dll"
-#r "packages/Hopac/lib/net45/Hopac.Core.dll"
-#r "packages/Hopac/lib/net45/Hopac.dll"
-#r "packages/Hopac/lib/net45/Hopac.Platform.dll"
-#load "Fake.Shake.Core.fsx"
-#load "Fake.Shake.Control.fsx"
-#load "Fake.Shake.DefaultRules.fsx"
-#else
 [<AutoOpen>]
 module Fake.Shake.Build
-#endif
 open System.Collections.Concurrent
 open Fake
 open Fake.Shake.Core
