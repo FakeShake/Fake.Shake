@@ -11,10 +11,11 @@ Differences from the paper/Haskell Shake, or implementation details:
 * Currently using SHA1 of content of files rather than last modified time - will revisit if it causes performance issues
 * Using FsPickler to store cache results
 
-Fake.Shake builds itself; to make the bootstrapping easier it doesn't use an fsproj, but is
-instead compiled from a set fsx script files. Have a look at [build.fsx](build.fsx) for the
-rule that compiles them. That file also contains the packaging and testing rules; changes to
-one should not require a rebuild of the other, but changing any dependency versions or
-source files for the main Fake.Shake.dll will cause all three to rebuild.
+Fake.Shake builds itself; to make the bootstrapping it ``#load``s the Fake.Shake source files rather then
+referencing the compiled binary. There shouldn't be any need to do this in any other situation.
+
+The current build contains the packaging and testing rules; changes to files that are depended on by
+one should not require a rebuild of the other, but changing anything both steps depend or in the core
+assembly will trigger partial rebuilds as required.
 
 Have fun, send pull requests!
