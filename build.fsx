@@ -134,13 +134,11 @@ let defaultProj =
 
                     // Make sure we capture current proj file
                     return! defaultFile.Action (Key k)
-                with
-                | e ->
+                finally
                     if System.IO.File.Exists temp then
                         System.IO.File.Delete temp
                     if System.IO.File.Exists analyseFile then
                         System.IO.File.Delete analyseFile
-                    return raise e
 
             }
         Provides = fun (Key k) -> Globbing.isMatch "**/*.*proj" k
@@ -166,7 +164,7 @@ let defaultPack =
                     return! defaultFile.Action (Key k)
             }
         Provides = fun (Key k) -> Globbing.isMatch "**/*paket.template" k
-        ValidStored = defaultDir.ValidStored
+        ValidStored = defaultFile.ValidStored
     }
 
 let nunit =
