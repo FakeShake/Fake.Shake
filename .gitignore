@@ -5,3 +5,4 @@ test.fsx
 TestResult.xml
 .fake
 bin
+obj

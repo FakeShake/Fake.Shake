@@ -30,16 +30,6 @@ let map f act =
 let combine expr1 expr2 =
     expr1 |> bind (fun () -> expr2)
 
-let tryWith expr handler =
-    fun state ->
-        try expr state
-        with e -> (handler e) state
-
-let tryFinally expr comp =
-    fun state ->
-        try expr state
-        finally comp()
-
 let liftAsync (expr : Async<'a>) : Action<'a> =
     fun state ->
         job {
@@ -67,6 +57,18 @@ let liftJob (expr : Job<'a>) : Action<'a> =
             let! a = expr
             return state, a
         } |> Promise.Now.delay
+
+let tryWith expr handler =
+    fun state ->
+        Job.tryWith
+            (expr state)
+            (fun ex -> handler ex state)
+        |> Promise.Now.delay
+
+let tryFinally (expr : Action<_>) comp : Action<_> =
+    fun state ->
+        Job.tryFinallyJob (expr state) (Job.thunk comp)
+        |> Promise.Now.delay
 
 let rec skip key state =
     let maybeRule = State.rawFind state key

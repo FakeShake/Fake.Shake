@@ -32,9 +32,7 @@ let build rules key =
             Stack = []
         }
     let finalState, result =
-       match require key state |> Job.catch |> TopLevel.run with
-       | Choice1Of2 x -> x
-       | Choice2Of2 ex -> raise ex
+       require key state |> Job.Global.run
     let mergedResults =
         finalState.Results.ToArray()
         |> Seq.map (fun kv -> kv.Key, kv.Value |> Job.Global.run)

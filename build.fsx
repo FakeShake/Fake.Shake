@@ -127,13 +127,21 @@ let defaultProj =
                     // Needs the output directory
                     do! require (Key data.OutputDir)
 
-                    // Make sure we capture current proj file
-                    return! defaultFile.Action (Key k)
-                finally
                     if System.IO.File.Exists temp then
                         System.IO.File.Delete temp
                     if System.IO.File.Exists analyseFile then
                         System.IO.File.Delete analyseFile
+
+                    // Make sure we capture current proj file
+                    return! defaultFile.Action (Key k)
+                with
+                | e ->
+                    if System.IO.File.Exists temp then
+                        System.IO.File.Delete temp
+                    if System.IO.File.Exists analyseFile then
+                        System.IO.File.Delete analyseFile
+                    return raise e
+
             }
         Provides = fun (Key k) -> Globbing.isMatch "**/*.*proj" k
         ValidStored = defaultFile.ValidStored
