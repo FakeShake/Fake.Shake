@@ -1,16 +1,5 @@
-#if INTERACTIVE
-#r "packages/FAKE/tools/FakeLib.dll"
-#r "packages/FsPickler/lib/net45/FsPickler.dll"
-#r "packages/Hopac/lib/net45/Hopac.Core.dll"
-#r "packages/Hopac/lib/net45/Hopac.dll"
-#r "packages/Hopac/lib/net45/Hopac.Platform.dll"
-#load "Fake.Shake.Core.fsx"
-#load "Fake.Shake.Control.fsx"
-#load "Fake.Shake.DefaultRules.fsx"
-#else
 [<AutoOpen>]
 module Fake.Shake.Build
-#endif
 open System.Collections.Concurrent
 open Fake
 open Fake.Shake.Core
@@ -43,9 +32,7 @@ let build rules key =
             Stack = []
         }
     let finalState, result =
-       match require key state |> Job.catch |> TopLevel.run with
-       | Choice1Of2 x -> x
-       | Choice2Of2 ex -> raise ex
+       require key state |> Job.Global.run
     let mergedResults =
         finalState.Results.ToArray()
         |> Seq.map (fun kv -> kv.Key, kv.Value |> Job.Global.run)

@@ -1,10 +1,4 @@
-#if INTERACTIVE
-#r "packages/FAKE/tools/FakeLib.dll"
-#load "Fake.Shake.Core.fsx"
-#load "Fake.Shake.Control.fsx"
-#else
 module Fake.Shake.DefaultRules
-#endif
 open System.IO
 open System.Security.Cryptography
 open Fake
@@ -39,13 +33,17 @@ let rec defaultFile =
 let defaultDir =
     {
         Action = fun (Key k) -> action {
-                tracefn "Found directory %s, requiring contents" k
-                do!
-                    Directory.GetFiles k
-                    |> Seq.map (System.IO.Path.GetFullPath)
-                    |> Seq.map Key |> List.ofSeq |> needs
-                let! _ = Directory.GetDirectories k |> Seq.map Key |> List.ofSeq |> requires
-                return ()
+                let fullPath = System.IO.Path.GetFullPath k
+                if k <> fullPath then
+                    return! require (Key fullPath)
+                else
+                    tracefn "Found directory %s, requiring contents" k
+                    do!
+                        Directory.GetFiles k
+                        |> Seq.map (System.IO.Path.GetFullPath)
+                        |> Seq.map Key |> List.ofSeq |> needs
+                    let! _ = Directory.GetDirectories k |> Seq.map Key |> List.ofSeq |> requires
+                    return ()
             }
         Provides = fun (Key k) -> Directory.Exists k
         ValidStored = fun (Key k) _ -> Directory.Exists k

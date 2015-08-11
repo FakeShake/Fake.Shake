@@ -1,9 +1,4 @@
-#if INTERACTIVE
-#r "packages/Hopac/lib/net45/Hopac.Core.dll"
-#r "packages/Hopac/lib/net45/Hopac.dll"
-#else
 module Fake.Shake.Core
-#endif
 open System
 open System.Collections.Concurrent
 open Hopac

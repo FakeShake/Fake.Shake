@@ -1,11 +1,4 @@
-#if INTERACTIVE
-#r "bin/Fake.Shake.dll"
-#r "packages/NUnit.Runners/tools/nunit.framework.dll"
-#r "packages/FsCheck/lib/net45/FsCheck.dll"
-#r "packages/Hopac/lib/net45/Hopac.Core.dll"
-#r "packages/Hopac/lib/net45/Hopac.dll"
-#endif
-
+module Fake.Shake.Tests
 open Fake.Shake.Core
 open Fake.Shake.Control
 open FsCheck
@@ -32,7 +25,6 @@ type ActionGenerators =
               override x.Generator = bindable
         }
 
-// random comment
 type ActionMonadProps () =
     static member ``First law`` (f : int -> Action<int>) x =
         let r = ((return' x) >>= f) state |> Job.Global.run |> snd
@@ -42,3 +34,39 @@ type ActionMonadProps () =
 [<Test>]
 let ``Action is a Monad`` () =
     Check.All<ActionMonadProps> { Config.QuickThrowOnFailure with Arbitrary = [typeof<ActionGenerators>] }
+
+//[<Test>]
+//let ``Try finally works`` () =
+//    let finallyFired = ref false
+//    let act = action {
+//        try
+//            failwith "I will always fail!"   
+//        finally
+//            finallyFired := true            
+//    }
+//    act state |> Job.Global.run |> ignore
+//    Assert.True(!finallyFired)
+
+[<Test>]
+let ``Try with works`` () =
+    let finallyFired = ref false
+    let act = action {
+        try
+            failwith "I will always fail!"   
+        with
+        | _ -> finallyFired := true            
+    }
+    act state |> Job.Global.run |> ignore
+    Assert.True(!finallyFired)
+    
+//[<Test>]
+//let ``Job try finally works`` () =
+//    let finallyFired = ref false
+//    let act = job {
+//        try
+//            failwith "I will always fail!"   
+//        finally
+//            finallyFired := true            
+//    }
+//    act |> Job.Global.run |> ignore
+//    Assert.True(!finallyFired)

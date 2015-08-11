@@ -1,7 +1,9 @@
 source https://nuget.org/api/v2
 
-nuget FAKE prerelease
+nuget FAKE
+nuget FAKE.Lib
 nuget FsCheck
 nuget FsPickler
+nuget NUnit
 nuget NUnit.Runners
 nuget Hopac

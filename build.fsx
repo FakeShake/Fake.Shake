@@ -1,6 +1,17 @@
-#load "Fake.Shake.fsx"
+// Manually add dll search paths for mono builds
 #I "packages/FAKE/tools"
+#I "packages/Hopac/lib/net45"
+#I "packages/NUnit.Runners/tools"
 #r "packages/FAKE/tools/FakeLib.dll"
+#r "packages/FsCheck/lib/net45/FsCheck.dll"
+#r "packages/FsPickler/lib/net45/FsPickler.dll"
+#r "packages/Hopac/lib/net45/Hopac.Core.dll"
+#r "packages/Hopac/lib/net45/Hopac.Platform.dll"
+#r "packages/Hopac/lib/net45/Hopac.dll"
+#load "src/Fake.Shake/Fake.Shake.Core.fs"
+#load "src/Fake.Shake/Fake.Shake.Control.fs"
+#load "src/Fake.Shake/Fake.Shake.DefaultRules.fs"
+#load "src/Fake.Shake/Fake.Shake.fs"
 open System.IO
 open System.Text.RegularExpressions
 open Fake
@@ -10,94 +21,152 @@ open Fake.Shake.Core
 open Fake.Shake.Control
 open Fake.Shake.DefaultRules
 
-let refReg = Regex("""^#r "(?<ref>.*)"$""", RegexOptions.Compiled)
-let sourceReg = Regex("""^#load "(?<src>.*)"$""", RegexOptions.Compiled)
-let packageReg = Regex("""packages/.*.[dll|exe]""", RegexOptions.Compiled)
-let binGlob = Globbing.isMatch "bin/*"
-let compileReg = Regex("""^compile::(?<fullpath>.*)""", RegexOptions.Compiled)
+let configuration = environVarOrDefault "Configuration" "Release"
 
-let outputDir =
+let analyseXml = """<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="WriteStuff" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(TargetProject)"/>
+  <Target Name="WriteStuff" DependsOnTargets="ResolveReferences">
+    <Message Importance="high" Text="References::@(ReferencePath)"/>
+    <Message Importance="high" Text="Compiles::@(BeforeCompile);@(Compile);@(AfterCompile)"/>
+    <Message Importance="high" Text="Output::$(OutputPath)"/>
+  </Target>
+</Project>
+"""
+
+type ProjectData =
+    {
+        References : string list
+        Compiles : string list
+        OutputDir : string
+    }
+
+let extractLineData (prefix : string) (line : string) =
+    line
+        .Substring(prefix.Length)
+        .Split(';')
+    |> Array.filter ((<>) "")
+
+let extractData project path =
+    let projDir = directory project
+    let prefixes = [|"References::";"Compiles::";"Output::"|]
+    System.IO.File.ReadAllText path |> printfn "%s"
+    System.IO.File.ReadAllLines path
+    |> Array.toSeq
+    |> Seq.map (fun s -> s.Trim())
+    |> Seq.filter ((<>) "")
+    |> Seq.skipWhile (fun s -> not <| s.StartsWith(prefixes.[0]))
+    |> Seq.take 3
+    |> Seq.zip prefixes
+    |> Seq.map (fun (prefix, line) -> extractLineData prefix line)
+    |> Seq.map Seq.toList
+    |> Seq.toList
+    |> function
+       | [references;compiles;[outputDir]] ->
+        {
+            References = references
+            Compiles = compiles |> List.map ((@@) projDir)
+            OutputDir = projDir @@ outputDir
+        }
+       | _ -> failwithf "Invalid project analysis file generated at %s" path
+
+let loggerProp filename =
+    { 
+        Number = 1
+        Filename = Some filename
+        Verbosity = Some MSBuildVerbosity.Minimal
+        Parameters = None
+    }
+
+let analyseParams projLoc loggerProp (p : MSBuildParams) =
+    { p with
+        NoLogo = true
+        Properties = 
+            [
+                "TargetProject", projLoc
+                "Configuration", configuration
+            ]
+        FileLoggers = Some [loggerProp]
+    }
+
+let buildParams (p : MSBuildParams) = 
+    { p with
+        NoLogo = true
+        Properties =
+            [
+                "Configuration", configuration
+            ] }
+
+let defaultProj =
     {
         Action = fun (Key k) -> action {
-                CleanDir k
-                do! need (Key "paket.lock")
-                let! templateLines = readLines "paket.template"
-                do!
-                    templateLines
-                    |> List.map (fun s -> s.Trim())
-                    |> List.filter binGlob
-                    |> List.map Key
-                    |> needs
-                let setParams (p : Paket.PaketPackParams) =
-                    { p with OutputPath = "output" }
-                Paket.Pack setParams
-                return! defaultDir.Action (Key k)
-            }
-        Provides = fun (Key k) -> "output" = k
-        ValidStored = defaultDir.ValidStored
-    }
+                let temp = System.IO.Path.GetTempFileName()
+                let projDir = directory k
+                let analyseFile = projDir @@ "Analyse.msbuild"
+                try
+                    // Make sure project references are built
+                    let projectReferences =
+                        getProjectReferences k
+                        |> Set.map Key
+                    do! needs projectReferences
 
-let binDir =
-    {
-        Action = fun (Key k) -> action { return ensureDirectory k }
-        Provides = fun (Key k) -> k = "bin"
-        ValidStored = fun (Key k) _ -> Directory.Exists k
-    }
+                    // Use MsBuild to get full requirements list
+                    // TODO: Add resource files
+                    System.IO.File.WriteAllText(analyseFile, analyseXml)
+                    let logger = loggerProp temp
+                    MSBuildHelper.build
+                        (analyseParams k logger)
+                        analyseFile
+                    let data =
+                        extractData k temp
+                    do! needs (List.concat [data.References;data.Compiles] |> List.map Key)
 
-let compile =
-    {
-        Action =
-            fun (Key k) -> action {
-                let path = compileReg.Match(k).Groups.["fullpath"].Value
-                tracefn "Building %s" path
-                let sourceFile =
-                    path |> filename |> changeExt "fsx" |> System.IO.Path.GetFullPath
-                let! lines =
-                    readLines sourceFile
-                let refs =
-                    lines
-                    |> List.filter (fun l -> refReg.IsMatch l)
-                    |> List.map (fun l -> refReg.Match(l).Groups.["ref"].Value)
-                let copyLocalRefs =
-                    refs
-                    |> List.filter (fun ref -> filename ref <> ref)
-                    |> List.map Key
-                do! require (Key "bin")
-                let copyLocal (Key localRef) =
-                    let target = "bin" @@ (filename localRef)
-                    if not <| File.Exists target then
-                        CopyFile target localRef
-                    Key target
-                let otherSourceFiles =
-                    lines
-                    |> List.filter (fun l -> sourceReg.IsMatch l)
-                    |> List.map (fun l -> sourceReg.Match(l).Groups.["src"].Value)
-                do! needs <| List.concat [copyLocalRefs
-                                          (copyLocalRefs |> List.map copyLocal)
-                                          otherSourceFiles |> List.map Key]
-                let setParams (p : FscParams) =
-                    { p with
-                        Debug = false
-                        FscTarget = Library
-                        Platform = AnyCpu
-                        Output = path
-                        References = refs }
-                do Fsc setParams (otherSourceFiles @ [sourceFile])
-                return! require<ContentHash> (Key path)
-            }
-        Provides = fun (Key k) -> compileReg.IsMatch k
-        ValidStored = fun (Key k) -> defaultFile.ValidStored (compileReg.Match(k).Groups.["fullpath"].Value |> Key)
-    }
+                    // Actually build the project with MSBuild
+                    MSBuildHelper.build buildParams k
 
-let isCompileLib =
-    {
-        Action =
-            fun (Key k) -> action {
-                let fullpath = System.IO.Path.GetFullPath k
-                return! require<ContentHash> (Key ("compile::" + fullpath))
+                    // Needs the output directory
+                    do! require (Key data.OutputDir)
+
+                    if System.IO.File.Exists temp then
+                        System.IO.File.Delete temp
+                    if System.IO.File.Exists analyseFile then
+                        System.IO.File.Delete analyseFile
+
+                    // Make sure we capture current proj file
+                    return! defaultFile.Action (Key k)
+                with
+                | e ->
+                    if System.IO.File.Exists temp then
+                        System.IO.File.Delete temp
+                    if System.IO.File.Exists analyseFile then
+                        System.IO.File.Delete analyseFile
+                    return raise e
+
             }
-        Provides = fun (Key k) -> binGlob k && File.Exists (k |> filename |> changeExt "fsx")
+        Provides = fun (Key k) -> Globbing.isMatch "**/*.*proj" k
         ValidStored = defaultFile.ValidStored
+    }
+
+let defaultPack =
+    {
+        Action = fun (Key k) -> action {
+                let fullPath = System.IO.Path.GetFullPath k
+                if fullPath <> k then
+                    return! require (Key fullPath)
+                else
+                    let matchingProjectFile =
+                        !! (directory k @@ "*.*proj")
+                        |> Seq.exactlyOne
+                    do! need (Key matchingProjectFile)
+                    let setParams (p : Paket.PaketPackParams) =
+                        { p with 
+                            OutputPath = "output"
+                            TemplateFile = k }
+                    Paket.Pack setParams
+                    return! defaultFile.Action (Key k)
+            }
+        Provides = fun (Key k) -> Globbing.isMatch "**/*paket.template" k
+        ValidStored = defaultDir.ValidStored
     }
 
 let nunit =
@@ -106,8 +175,11 @@ let nunit =
         Action =
             fun (Key k) ->
                 action {
-                    do! need (Key <| "bin" @@ "Fake.Shake.Tests.dll")
-                    NUnit id ["bin" @@ "Fake.Shake.Tests.dll"]
+                    // Ensure all test projects built
+                    do! needs (!! "test/**/*.*proj" |> Seq.map Key)
+                    let testDlls = !! (sprintf "test/**/bin/%s/*.Tests.dll" configuration) |> Seq.toList
+                    do! needs (testDlls |> Seq.map Key)
+                    NUnit id testDlls 
                     return! defaultFile.Action (Key "TestResult.xml")
                 }
         ValidStored = defaultFile.ValidStored
@@ -124,18 +196,30 @@ let runTests =
         ValidStored = fun _ _ -> true
     }
 
+let runPack =
+    {
+        Provides = fun (Key k) -> k = "pack"
+        Action =
+            fun (Key k) ->
+                action {
+                    CleanDir "output"
+                    do! needs (!! "**/*paket.template" |> Seq.map Key)
+                    do! require (Key "output")
+                }
+        ValidStored = fun _ _ -> true
+    }
+
 let main =
     {
         Provides = fun (Key k) -> k = "main"
         Action =
             fun (Key k) -> action {
-                do! need (Key "build.fsx")
-                do! doAll [Key "test"; Key "output"]
+                do! doAll[Key "pack";Key "test"]
             }
         ValidStored = fun _ _ -> true
     }
 
-let rules : IRule list = [main;binDir;outputDir;isCompileLib;compile;runTests;nunit]
+let rules : IRule list = [main;runTests;nunit;defaultProj;runPack;defaultPack]
 
 #time "on"
 do build (rules @ allDefaults) (Key "main")
