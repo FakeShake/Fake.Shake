@@ -35,17 +35,19 @@ type ActionMonadProps () =
 let ``Action is a Monad`` () =
     Check.All<ActionMonadProps> { Config.QuickThrowOnFailure with Arbitrary = [typeof<ActionGenerators>] }
 
-//[<Test>]
-//let ``Try finally works`` () =
-//    let finallyFired = ref false
-//    let act = action {
-//        try
-//            failwith "I will always fail!"   
-//        finally
-//            finallyFired := true            
-//    }
-//    act state |> Job.Global.run |> ignore
-//    Assert.True(!finallyFired)
+[<Test>]
+let ``Try finally works`` () =
+    let finallyFired = ref false
+    let act = action {
+        try
+            failwith "I will always fail!"   
+        finally
+            finallyFired := true            
+    }
+    try
+        act state |> Job.Global.run |> ignore
+    with _ -> ()
+    Assert.True(!finallyFired)
 
 [<Test>]
 let ``Try with works`` () =
@@ -59,14 +61,3 @@ let ``Try with works`` () =
     act state |> Job.Global.run |> ignore
     Assert.True(!finallyFired)
     
-//[<Test>]
-//let ``Job try finally works`` () =
-//    let finallyFired = ref false
-//    let act = job {
-//        try
-//            failwith "I will always fail!"   
-//        finally
-//            finallyFired := true            
-//    }
-//    act |> Job.Global.run |> ignore
-//    Assert.True(!finallyFired)
