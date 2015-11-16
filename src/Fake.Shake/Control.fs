@@ -7,13 +7,6 @@ open Fake.Shake.Core
 open FSharp.Control.AsyncLazy
 open Nessos.FsPickler
 
-module Async =
-    let map f a =
-        async {
-            let! r = a
-            return f r
-        }
-
 let binary = FsPickler.CreateBinarySerializer()
 
 let bind (continuation : 'a -> Action<'b>) (expr : Action<'a>) : Action<'b> =
@@ -56,7 +49,7 @@ let liftTask' (expr : Task) : Action<unit> =
         let cont (t : Task) =
             match t.IsFaulted with
             | true -> raise t.Exception
-            | arg -> ()
+            | false -> ()
         async {
             do!
                 expr.ContinueWith cont
@@ -111,43 +104,18 @@ let private run<'a> key state =
                 State.clearDeps key state
                 rule.Action key state
             let pickled =
-                result.Force()
-                |> Async.map (fun (_, r) -> binary.Pickle r)
-                |> AsyncLazy.Create
+                result
+                |> AsyncLazy.map (fun (_, r) -> binary.Pickle r)
             state.Results.GetOrAdd(key, pickled) |> ignore
         }
-
-let rec private loop (inbox : MailboxProcessor<_>) =
-    async {
-        let! key, state, run, (chan : AsyncReplyChannel<_>) = inbox.Receive()
-        let! r =
-            match state.Results.TryGetValue key with
-            | true, _ -> async { return None }
-            | false, _ ->
-                try
-                    async {
-                        do! run key state
-                        return None
-                    }
-                with
-                | e -> async { return Some e }
-        chan.Reply r
-        return! loop inbox
-    }
-
-let processRequire = MailboxProcessor.Start loop
 
 let require<'a> key : Action<'a> =
     fun state ->
         async {
-            // tracefn "%A required via stack: %A" key state.Stack
             let state =
                 state
                 |> State.push key
-            let! possEx = processRequire.PostAndAsyncReply (fun chan -> key, state, run<'a>, chan)
-            match possEx with
-            | Some ex -> raise ex
-            | None -> ()
+            do! run<'a> key state
             let! state, result =
                 state.Results.[key]
                 |> (fun bytes -> 
