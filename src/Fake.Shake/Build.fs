@@ -47,6 +47,7 @@ let build { CacheFile = cacheFile; PostBuildCheck = postBuildCheck } rules key =
         |> Map.ofSeq
         |> Map.fold (fun old k bytes -> Map.add k bytes old) old.Results
     let cache = { Dependencies = finalState.Dependencies; Results = mergedResults }
+    System.IO.Directory.CreateDirectory(".fake") |> ignore
     System.IO.File.WriteAllBytes(cacheFile, binary.Pickle cache)
     if postBuildCheck && (not <| skip key { state with OldResults = cache.Results }) then
         traceImportant <| sprintf "Build complete, but %A does not have a valid stored result." key
