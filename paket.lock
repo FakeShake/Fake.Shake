@@ -1,12 +1,16 @@
+REDIRECTS: ON
 NUGET
   remote: https://nuget.org/api/v2
   specs:
-    FAKE (4.0.3)
-    FAKE.Lib (4.0.3)
-    FsCheck (1.0.4)
-    FSharp.Core (3.1.2.1)
-    FsPickler (1.2.23)
-    Hopac (0.0.0.48)
-      FSharp.Core (>= 3.1.2.1)
+    FAKE (4.9.1)
+    FAKE.Lib (4.9.1)
+    FsCheck (2.2.2)
+      FSharp.Core (>= 3.1.2.5)
+    FSharp.Core (4.0.0.1)
+    FsPickler (1.5.2)
     NUnit (2.6.4)
     NUnit.Runners (2.6.4)
+GITHUB
+  remote: mavnn/FSharp.Control.AsyncLazy
+  specs:
+    FSharp.Control.AsyncLazy/AsyncLazy.fs (b8bd138d26e44539c40f30b9c4ce7d8f4835b631)

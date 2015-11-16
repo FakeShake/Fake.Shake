@@ -1,7 +1,6 @@
 module Fake.Shake.Core
-open System
 open System.Collections.Concurrent
-open Hopac
+open FSharp.Control.AsyncLazy
 
 type Key =
     | Key of string
@@ -22,11 +21,11 @@ type [<NoEquality>][<NoComparison>] Rule<'a> =
     interface IRule with
         member this.Provides k = this.Provides k
         member this.ValidStored key bytes = this.ValidStored key bytes
-and Action<'a> = State -> Promise<State * 'a>
+and Action<'a> = State -> AsyncLazy<State * 'a>
 and [<NoComparison>] State =
     {
       Rules : seq<IRule>
-      Results : ConcurrentDictionary<Key, Promise<byte []>>
+      Results : ConcurrentDictionary<Key, AsyncLazy<byte []>>
       OldResults : Map<Key, byte[]>
       Current : Key option
       Dependencies : ConcurrentDictionary<Key, Key list>

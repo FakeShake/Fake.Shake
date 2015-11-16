@@ -2,7 +2,6 @@ module Fake.Shake.Tests
 open Fake.Shake.Core
 open Fake.Shake.Control
 open FsCheck
-open Hopac
 open NUnit.Framework
 
 let bindable =
@@ -27,8 +26,8 @@ type ActionGenerators =
 
 type ActionMonadProps () =
     static member ``First law`` (f : int -> Action<int>) x =
-        let r = ((return' x) >>= f) state |> Job.Global.run |> snd
-        let r' = (f x state) |> Job.Global.run |> snd
+        let r = (((return' x) >>= f) state).Force() |> Async.RunSynchronously |> snd
+        let r' = (f x state).Force() |> Async.RunSynchronously |> snd
         r = r'
 
 [<Test>]
@@ -45,7 +44,7 @@ let ``Try finally works`` () =
             finallyFired := true            
     }
     try
-        act state |> Job.Global.run |> ignore
+        (act state).Force() |> Async.RunSynchronously |> ignore
     with _ -> ()
     Assert.True(!finallyFired)
 
@@ -58,6 +57,6 @@ let ``Try with works`` () =
         with
         | _ -> finallyFired := true            
     }
-    act state |> Job.Global.run |> ignore
+    (act state).Force() |> Async.RunSynchronously |> ignore
     Assert.True(!finallyFired)
     

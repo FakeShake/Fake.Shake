@@ -4,25 +4,32 @@ module Fake.Shake.Control
 open System.Threading.Tasks
 open Fake
 open Fake.Shake.Core
-open Hopac
+open FSharp.Control.AsyncLazy
 open Nessos.FsPickler
 
-let binary = FsPickler.CreateBinary()
+module Async =
+    let map f a =
+        async {
+            let! r = a
+            return f r
+        }
+
+let binary = FsPickler.CreateBinarySerializer()
 
 let bind (continuation : 'a -> Action<'b>) (expr : Action<'a>) : Action<'b> =
     fun state ->
-        job {
-            let! results = expr state
+        async {
+            let! results = (expr state).Force()
             let state', result = results
-            return! continuation result state'
-        } |> Promise.Now.delay
+            return! (continuation result state').Force()
+        } |> AsyncLazy.Create
 
 let (>>=) expr continuation =
     bind continuation expr
 
 let return' x =
     fun state ->
-        Promise.Now.withValue (state, x)
+        AsyncLazy.CreateFromValue (state, x)
 
 let map f act =
     bind (f >> return') act
@@ -32,43 +39,49 @@ let combine expr1 expr2 =
 
 let liftAsync (expr : Async<'a>) : Action<'a> =
     fun state ->
-        job {
+        async {
             let! a = expr
             return state, a
-        } |> Promise.Now.delay
+        } |> AsyncLazy.Create
 
 let liftTask (expr : Task<'a>) : Action<'a> =
     fun state ->
-        job {
-            let! a = expr
+        async {
+            let! a = Async.AwaitTask expr
             return state, a
-        } |> Promise.Now.delay
+        } |> AsyncLazy.Create
 
 let liftTask' (expr : Task) : Action<unit> =
     fun state ->
-        job {
-            do! expr
+        let cont (t : Task) =
+            match t.IsFaulted with
+            | true -> raise t.Exception
+            | arg -> ()
+        async {
+            do!
+                expr.ContinueWith cont
+                |> Async.AwaitTask
             return state, ()
-        } |> Promise.Now.delay
+        } |> AsyncLazy.Create
 
-let liftJob (expr : Job<'a>) : Action<'a> =
+let tryWith (expr : Action<_>) (handler : exn -> Action<_>) =
     fun state ->
-        job {
-            let! a = expr
-            return state, a
-        } |> Promise.Now.delay
-
-let tryWith expr handler =
-    fun state ->
-        Job.tryWith
-            (expr state)
-            (fun ex -> handler ex state)
-        |> Promise.Now.delay
+        async {
+            try
+                return! (expr state).Force()
+            with
+            | e ->
+                return! (handler e state).Force()
+        } |> AsyncLazy.Create
 
 let tryFinally (expr : Action<_>) comp : Action<_> =
     fun state ->
-        Job.tryFinallyJob (expr state) (Job.thunk comp)
-        |> Promise.Now.delay
+        async {
+            try
+                return! (expr state).Force()
+            finally
+                comp()
+        } |> AsyncLazy.Create
 
 let rec skip key state =
     let maybeRule = State.rawFind state key
@@ -85,71 +98,79 @@ let rec skip key state =
 let private run<'a> key state =
     match skip key state with
     | true ->
-        job {
+        async {
             tracefn "Skipped %A, valid stored result" key
-            let pickle = state.OldResults.[key] |> Promise.Now.withValue
+            let pickle = state.OldResults.[key] |> AsyncLazy.CreateFromValue
             state.Results.GetOrAdd(key, pickle) |> ignore
         }
     | false ->
-        job {
+        async {
             tracefn "No valid stored value for %A, running" key
             let rule = State.find state key
-            let (result : Promise<State * 'a>) =
+            let (result : AsyncLazy<State * 'a>) =
                 State.clearDeps key state
                 rule.Action key state
             let pickled =
-                result
-                |> Job.map (fun (_, r) -> binary.Pickle r)
-                |> Promise.Now.delay
+                result.Force()
+                |> Async.map (fun (_, r) -> binary.Pickle r)
+                |> AsyncLazy.Create
             state.Results.GetOrAdd(key, pickled) |> ignore
         }
 
-let private requireCh : Ch<Key * State * (Key -> State -> Job<unit>) * Ch<unit>> =
-    Ch.create ()
-    |> Hopac.TopLevel.run
-
-let rec private processRequire () =
-    job {
-        let! key, state, run, ack = Ch.take requireCh
-        do!
+let rec private loop (inbox : MailboxProcessor<_>) =
+    async {
+        let! key, state, run, (chan : AsyncReplyChannel<_>) = inbox.Receive()
+        let! r =
             match state.Results.TryGetValue key with
-            | true, _ -> Alt.always () :> Job<unit>
-            | false, _ -> run key state
-        do! Ch.send ack ()
-        return! processRequire ()
+            | true, _ -> async { return None }
+            | false, _ ->
+                try
+                    async {
+                        do! run key state
+                        return None
+                    }
+                with
+                | e -> async { return Some e }
+        chan.Reply r
+        return! loop inbox
     }
 
-do processRequire () |> Hopac.TopLevel.start
+let processRequire = MailboxProcessor.Start loop
 
 let require<'a> key : Action<'a> =
     fun state ->
-        job {
-            tracefn "%A required via stack %A" key state.Stack
+        async {
+            // tracefn "%A required via stack: %A" key state.Stack
             let state =
                 state
                 |> State.push key
-            let! ackChannel = Ch.create ()
-            do! Ch.send requireCh (key, state, run<'a>, ackChannel)
-            do! Ch.take ackChannel
+            let! possEx = processRequire.PostAndAsyncReply (fun chan -> key, state, run<'a>, chan)
+            match possEx with
+            | Some ex -> raise ex
+            | None -> ()
             let! state, result =
                 state.Results.[key]
-                |> Job.bind (fun bytes -> Promise.Now.withValue (state, binary.UnPickle bytes))
+                |> (fun bytes -> 
+                        async { 
+                            let! b = bytes.Force()
+                            return state, binary.UnPickle b })
             return (State.pop state, result)
-        } |> Promise.Now.delay
+        } |> AsyncLazy.Create
 
 let requires<'a> keys : Action<'a list> =
     fun state ->
-        Extensions.Seq.Con.mapJob (fun k -> require<'a> k state) keys
-        |> Job.map Seq.toList
-        |> Job.map (List.map snd)
-        |> Job.map (fun results -> state, results)
-        |> Promise.Now.delay
+        keys
+        |> Seq.map (fun k -> require<'a> k state)
+        |> AsyncLazy.Parallel
+        |> AsyncLazy.map Seq.toList
+        |> AsyncLazy.map (List.map snd)
+        |> AsyncLazy.map (fun results -> state, results)
 
 let doAll keys : Action<unit> =
     fun state ->
-        Extensions.Seq.Con.mapJob (fun k -> (require<unit> k) state) keys
-        |> Job.map (fun _ -> state, ())
-        |> Promise.Now.delay
+        Seq.map (fun k -> (require<unit> k) state) keys
+        |> AsyncLazy.Parallel
+        |> AsyncLazy.map (fun _ -> state, ())
 
 let need key : Action<unit> =
     require<ContentHash> key
@@ -168,8 +189,6 @@ type ActionBuilder () =
         bind cont (liftTask expr)
     member __.Bind(expr, cont) =
         bind cont (liftTask' expr)
-    member __.Bind(expr, cont) =
-        bind cont (liftJob expr)
     member __.Return x =
         return' x
     member __.Zero () =
@@ -182,8 +201,6 @@ type ActionBuilder () =
         liftTask x
     member __.ReturnFrom x =
         liftTask' x
-    member __.ReturnFrom x =
-        liftJob x
     member this.Delay (cont) =
         this.Bind (this.Return (), cont)
     member __.Combine (expr1, expr2) =
