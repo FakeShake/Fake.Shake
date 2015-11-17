@@ -11,22 +11,22 @@ type Result<'a> =
     | UnChecked of 'a
 type IRule =
     abstract member Provides : Key -> bool
-    abstract member ValidStored : Key -> byte [] -> bool
+    abstract member ValidStored : Key -> obj -> bool
 type [<NoEquality>][<NoComparison>] Rule<'a> =
     {
         Action : Key -> Action<'a>
         Provides : Key -> bool
-        ValidStored : Key -> byte [] -> bool
+        ValidStored : Key -> 'a -> bool
     }
     interface IRule with
         member this.Provides k = this.Provides k
-        member this.ValidStored key bytes = this.ValidStored key bytes
+        member this.ValidStored key o = this.ValidStored key (unbox<'a> o)
 and Action<'a> = State -> AsyncLazy<State * 'a>
 and [<NoComparison>] State =
     {
       Rules : seq<IRule>
-      Results : ConcurrentDictionary<Key, AsyncLazy<byte []>>
-      OldResults : Map<Key, byte[]>
+      Results : ConcurrentDictionary<Key, AsyncLazy<obj>>
+      OldResults : Map<Key, obj>
       Current : Key option
       Dependencies : ConcurrentDictionary<Key, Key list>
       Stack : Key list

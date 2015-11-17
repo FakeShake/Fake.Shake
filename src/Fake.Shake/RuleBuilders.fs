@@ -24,9 +24,8 @@ let fileRule pattern (fileAction : Key -> Action<unit>) =
             }
         Provides = fun (Key k) ->
             Globbing.isMatch pattern k
-        ValidStored = fun (Key k) bytes ->
+        ValidStored = fun (Key k) old ->
             try
-                let old = binary.UnPickle bytes
                 File.Exists k && (old = hashFile k)
             with
             | _ -> false

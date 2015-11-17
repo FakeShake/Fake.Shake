@@ -8,7 +8,7 @@ open Fake.Shake.Control
 type [<NoComparison>] Cache =
     {
         Dependencies : ConcurrentDictionary<Key, Key list>
-        Results : Map<Key, byte []>
+        Results : Map<Key, obj>
     }
 
 type FakeShakeConfig =
@@ -45,7 +45,7 @@ let build { CacheFile = cacheFile; PostBuildCheck = postBuildCheck } rules key =
         finalState.Results.ToArray()
         |> Seq.map (fun kv -> kv.Key, kv.Value.Force() |> Async.RunSynchronously)
         |> Map.ofSeq
-        |> Map.fold (fun old k bytes -> Map.add k bytes old) old.Results
+        |> Map.fold (fun old k o -> Map.add k o old) old.Results
     let cache = { Dependencies = finalState.Dependencies; Results = mergedResults }
     System.IO.Directory.CreateDirectory(".fake") |> ignore
     System.IO.File.WriteAllBytes(cacheFile, binary.Pickle cache)

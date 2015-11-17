@@ -93,8 +93,10 @@ let private run<'a> key state =
     | true ->
         async {
             tracefn "Skipped %A, valid stored result" key
-            let pickle = state.OldResults.[key] |> AsyncLazy.CreateFromValue
-            state.Results.GetOrAdd(key, pickle) |> ignore
+            let old : 'a =
+                state.OldResults.[key]
+                |> unbox
+            state.Results.GetOrAdd(key, (box >> AsyncLazy.CreateFromValue) old) |> ignore
         }
     | false ->
         async {
@@ -103,10 +105,10 @@ let private run<'a> key state =
             let (result : AsyncLazy<State * 'a>) =
                 State.clearDeps key state
                 rule.Action key state
-            let pickled =
+            let boxed =
                 result
-                |> AsyncLazy.map (fun (_, r) -> binary.Pickle r)
-            state.Results.GetOrAdd(key, pickled) |> ignore
+                |> AsyncLazy.map (snd >> box)
+            state.Results.GetOrAdd(key, boxed) |> ignore
         }
 
 let require<'a> key : Action<'a> =
@@ -121,7 +123,7 @@ let require<'a> key : Action<'a> =
                 |> (fun bytes -> 
                         async { 
                             let! b = bytes.Force()
-                            return state, binary.UnPickle b })
+                            return state, unbox<'a> b })
             return (State.pop state, result)
         } |> AsyncLazy.Create
 
