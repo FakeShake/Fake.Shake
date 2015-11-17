@@ -10,10 +10,7 @@
 #load "src/Fake.Shake/RuleBuilders.fs"
 #load "src/Fake.Shake/DefaultRules.fs"
 #load "src/Fake.Shake/Build.fs"
-open System.IO
-open System.Text.RegularExpressions
 open Fake
-open Fake.FscHelper
 open Fake.Shake
 open Fake.Shake.Core
 open Fake.Shake.Control
