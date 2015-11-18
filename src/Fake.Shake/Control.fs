@@ -91,25 +91,23 @@ let rec skip key state =
 let private run<'a> key state =
     match skip key state with
     | true ->
-        async {
-            tracefn "Skipped %A, valid stored result" key
-            let old : 'a =
-                state.OldResults.[key]
-                |> unbox
-            state.Results.GetOrAdd(key, (box >> AsyncLazy.CreateFromValue) old) |> ignore
-        }
+        tracefn "Skipped %A, valid stored result" key
+        let old : 'a =
+            state.OldResults.[key]
+            |> unbox
+        state.Results.GetOrAdd(key, (box >> AsyncLazy.CreateFromValue) old) |> ignore
     | false ->
-        async {
-            tracefn "No valid stored value for %A, running" key
-            let rule = State.find state key
-            let (result : AsyncLazy<State * 'a>) =
-                State.clearDeps key state
-                rule.Action key state
-            let boxed =
-                result
-                |> AsyncLazy.map (snd >> box)
-            state.Results.GetOrAdd(key, boxed) |> ignore
-        }
+        tracefn "No valid stored value for %A, running" key
+        let rule = State.find state key
+        let (result : AsyncLazy<State * 'a>) =
+            State.clearDeps key state
+            rule.Action key state
+        let boxed =
+            result
+            |> AsyncLazy.map (snd >> box)
+        state.Results.GetOrAdd(key, boxed) |> ignore
+
+let private lock' = obj()
 
 let require<'a> key : Action<'a> =
     fun state ->
@@ -117,7 +115,7 @@ let require<'a> key : Action<'a> =
             let state =
                 state
                 |> State.push key
-            do! run<'a> key state
+            lock lock' (fun () -> run<'a> key state)
             let! state, result =
                 state.Results.[key]
                 |> (fun bytes -> 
