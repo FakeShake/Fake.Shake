@@ -1,5 +1,5 @@
 ﻿NUnit
 FsCheck
-Hopac
 FAKE.Lib
 FsPickler
+FSharp.Core

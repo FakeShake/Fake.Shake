@@ -1,9 +1,12 @@
+redirects: on
 source https://nuget.org/api/v2
 
 nuget FAKE
 nuget FAKE.Lib
 nuget FsCheck
 nuget FsPickler
-nuget NUnit
+nuget NUnit < 3.0
 nuget NUnit.Runners
-nuget Hopac
+nuget FSharp.Core
+
+github mavnn/FSharp.Control.AsyncLazy FSharp.Control.AsyncLazy/AsyncLazy.fs

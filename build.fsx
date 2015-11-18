@@ -1,25 +1,22 @@
 // Manually add dll search paths for mono builds
 #I "packages/FAKE/tools"
-#I "packages/Hopac/lib/net45"
 #I "packages/NUnit.Runners/tools"
 #r "packages/FAKE/tools/FakeLib.dll"
 #r "packages/FsCheck/lib/net45/FsCheck.dll"
 #r "packages/FsPickler/lib/net45/FsPickler.dll"
-#r "packages/Hopac/lib/net45/Hopac.Core.dll"
-#r "packages/Hopac/lib/net45/Hopac.Platform.dll"
-#r "packages/Hopac/lib/net45/Hopac.dll"
-#load "src/Fake.Shake/Fake.Shake.Core.fs"
-#load "src/Fake.Shake/Fake.Shake.Control.fs"
-#load "src/Fake.Shake/Fake.Shake.DefaultRules.fs"
-#load "src/Fake.Shake/Fake.Shake.fs"
-open System.IO
-open System.Text.RegularExpressions
+#load "paket-files/mavnn/FSharp.Control.AsyncLazy/FSharp.Control.AsyncLazy/AsyncLazy.fs"
+#load "src/Fake.Shake/Core.fs"
+#load "src/Fake.Shake/Control.fs"
+#load "src/Fake.Shake/RuleBuilders.fs"
+#load "src/Fake.Shake/DefaultRules.fs"
+#load "src/Fake.Shake/Build.fs"
 open Fake
-open Fake.FscHelper
 open Fake.Shake
 open Fake.Shake.Core
 open Fake.Shake.Control
+open Fake.Shake.RuleBuilders
 open Fake.Shake.DefaultRules
+open Fake.Shake.DefaultRules.FileRules
 
 let configuration = environVarOrDefault "Configuration" "Release"
 
@@ -50,7 +47,6 @@ let extractLineData (prefix : string) (line : string) =
 let extractData project path =
     let projDir = directory project
     let prefixes = [|"References::";"Compiles::";"Output::"|]
-    System.IO.File.ReadAllText path |> printfn "%s"
     System.IO.File.ReadAllLines path
     |> Array.toSeq
     |> Seq.map (fun s -> s.Trim())
@@ -81,7 +77,7 @@ let loggerProp filename =
 let analyseParams projLoc loggerProp (p : MSBuildParams) =
     { p with
         NoLogo = true
-        Properties = 
+        Properties =
             [
                 "TargetProject", projLoc
                 "Configuration", configuration
@@ -89,7 +85,7 @@ let analyseParams projLoc loggerProp (p : MSBuildParams) =
         FileLoggers = Some [loggerProp]
     }
 
-let buildParams (p : MSBuildParams) = 
+let buildParams (p : MSBuildParams) =
     { p with
         NoLogo = true
         Properties =
@@ -157,7 +153,7 @@ let defaultPack =
                         |> Seq.exactlyOne
                     do! need (Key matchingProjectFile)
                     let setParams (p : Paket.PaketPackParams) =
-                        { p with 
+                        { p with
                             OutputPath = "output"
                             TemplateFile = k }
                     Paket.Pack setParams
@@ -167,21 +163,18 @@ let defaultPack =
         ValidStored = defaultFile.ValidStored
     }
 
+let private nunitParams (p : NUnitParams) =
+    { p with Framework = "net-4.5" }
+
 let nunit =
-    {
-        Provides = fun (Key k) -> k = "TestResult.xml"
-        Action =
-            fun (Key k) ->
-                action {
-                    // Ensure all test projects built
-                    do! needs (!! "test/**/*.*proj" |> Seq.map Key)
-                    let testDlls = !! (sprintf "test/**/bin/%s/*.Tests.dll" configuration) |> Seq.toList
-                    do! needs (testDlls |> Seq.map Key)
-                    NUnit id testDlls 
-                    return! defaultFile.Action (Key "TestResult.xml")
-                }
-        ValidStored = defaultFile.ValidStored
-    }
+    let act (Key k) =
+        action {
+            do! needs (!! "test/**/*.*proj" |> Seq.map Key)
+            let testDlls = !! (sprintf "test/**/bin/%s/*.Tests.dll" configuration) |> Seq.toList
+            do! needs (testDlls |> Seq.map Key)
+            NUnit nunitParams testDlls
+        }
+    fileRule "**/TestResult.xml" act
 
 let runTests =
     {
@@ -220,5 +213,5 @@ let main =
 let rules : IRule list = [main;runTests;nunit;defaultProj;runPack;defaultPack]
 
 #time "on"
-do build (rules @ allDefaults) (Key "main")
+do build (FakeShakeConfig.Default) (rules @ allDefaults) (Key "main")
 #time "off"

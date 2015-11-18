@@ -6,3 +6,5 @@ TestResult.xml
 .fake
 bin
 obj
+*.ncrunch*
+paket-files

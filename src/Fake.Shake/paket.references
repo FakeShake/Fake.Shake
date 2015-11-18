@@ -1,4 +1,5 @@
-﻿Hopac
-FAKE.Lib
+﻿FAKE.Lib
 FsPickler
 FSharp.Core
+
+File:AsyncLazy.fs
